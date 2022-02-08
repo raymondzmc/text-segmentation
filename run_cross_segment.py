@@ -7,7 +7,7 @@ import torch.nn as nn
 from tqdm import tqdm
 from os.path import join as pjoin
 from torch.utils.data import DataLoader
-from transformers import AutoModel
+from transformers import AutoModel, AdamW
 
 from wiki_loader import CrossSegWikiDataset
 
@@ -44,7 +44,7 @@ class CrossSegmentBert(nn.Module):
 
         logits = self.classifier(cls_embeddings).squeeze(1)
         cls_loss = self.criterion(logits, targets)
-        return cls_loss
+        return (logits, cls_loss)
 
 
 def train_collate_fn(batch):
@@ -55,30 +55,77 @@ def train_collate_fn(batch):
     results['targets'] = torch.tensor([example[3] for example in batch]).float()
     return results
 
+def eval(model, eval_loader):
+    model.eval()
+    cuda = next(model.parameters()).is_cuda
+
+    with torch.no_grad():
+
+        tp, fp, fn = 0, 0, 0
+        total_loss = 0.
+        for step, batch in tqdm(enumerate(eval_loader), total=len(eval_loader)):
+            if cuda:
+                batch = {k: v.to('cuda') for k, v in batch.items()}
+
+            
+            logits, loss = model(**batch)
+
+            targets = batch['targets']
+            pred = logits.round()
+            tp += torch.logical_and(targets == 1, pred == 1).sum().item()
+            fp += torch.logical_and(targets == 0, pred == 1).sum().item()
+            fn += torch.logical_and(targets == 1, pred == 0).sum().item()
+            total_loss += loss.item()
+
+            if step > 100:
+                break
+
+        precision = round(tp / (tp + fp), 4)
+        recall = round(tp / (tp + fn), 4)
+        f_score = round(tp / (tp + 0.5 * (fp + fn)), 4)
+        total_loss = round(total_loss, 4)
+
+
+    return precision, recall, f_score, total_loss
+
 
 def train(args):
     model = CrossSegmentBert(args)
+    model.train()
 
     if args.cuda:
         model = model.to('cuda')
 
     train_set = CrossSegWikiDataset(args, 'train')
     dev_set = CrossSegWikiDataset(args, 'dev')
-    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, collate_fn=train_collate_fn)
-    optimizer = build_optim(args, model)
+    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, collate_fn=train_collate_fn, num_workers=args.num_workers)
+    dev_loader = DataLoader(dev_set, batch_size=args.eval_batch_size, shuffle=False, collate_fn=train_collate_fn, num_workers=args.num_workers)
+    optimizer = AdamW(model.parameters(), lr=args.lr)
 
+    total_accum_steps = 0
     for epoch in range(args.num_epochs):
-        for idx, batch in tqdm(enumerate(train_loader), total=len(train_loader)):
-                
-            if args.cuda:
-                batch = {k: v.to('cuda') for k, v in batch.items()}
+        with tqdm(desc='Training', total=len(train_loader)) as pbar:
+            for step, batch in enumerate(train_loader):
+                    
+                if args.cuda:
+                    batch = {k: v.to('cuda') for k, v in batch.items()}
 
-            loss = model(**batch)
-            loss.backward()
+                logits, loss = model(**batch)
+                loss.backward()
 
-            if ((idx + 1) % args.grad_accum_steps == 0) or (idx + 1 == len(train_loader)):
-                optimizer.step()
-                model.zero_grad()
+                if ((step + 1) % args.grad_accum_steps == 0) or (step + 1 == len(train_loader)):
+                    optimizer.step()
+                    model.zero_grad()
+                    total_accum_steps += 1
+
+                if (total_accum_steps + 1) % args.eval_steps == 0:
+                    pbar.set_description('Evaluating on Dev Set')
+                    precision, recall, f_score, total_loss = eval(model, dev_loader)
+                    pbar.set_description(f'(Dev: f1: {f_score}, loss={total_loss}')
+                    model.train()
+
+                pbar.update(1)
+
 
 def test(args):
     pass
@@ -99,6 +146,9 @@ if __name__ == "__main__":
     parser.add_argument('-grad_accum_steps', help='Number of steps for gradient accumulation (Effective batch size = batch_size x grad_accum_steps)', type=int, default=192)
     parser.add_argument('-num_workers', help='Number of workers for the dataloaders', type=int, default=0)
     parser.add_argument('-num_epochs', help='Max number of epochs to train', type=int, default=1)
+    parser.add_argument('-lr', help='Learning rate', type=float, default=1e-5)
+    parser.add_argument('-eval_steps', help='Number of accumulated steps before each dev set evaluation', type=int, default=1000)
+    parser.add_argument('-eval_batch_size', help='Batch size during evaluation', type=int, default=16)
 
     parser.add_argument('-hidden_size', help='Hidden size of the output classifier', type=int, default=128)
     
