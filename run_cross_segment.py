@@ -9,7 +9,7 @@ from os.path import join as pjoin
 from torch.utils.data import DataLoader
 from transformers import AutoModel, AdamW
 
-from wiki_loader import CrossSegWikiDataset
+from wiki_loader import CrossSegWiki727KDataset, CrossSegWikiSectionDataset
 
 class CrossSegmentBert(nn.Module):
     def __init__(self, args):
@@ -89,6 +89,7 @@ def eval(model, eval_loader):
     return precision, recall, f_score, total_loss
 
 
+
 def train(args):
     model = CrossSegmentBert(args)
     model.train()
@@ -96,8 +97,15 @@ def train(args):
     if args.cuda:
         model = model.to('cuda')
 
-    train_set = CrossSegWikiDataset(args, 'train')
-    dev_set = CrossSegWikiDataset(args, 'dev')
+    # Initialize datasets
+    if args.dataset == 'wiki_727K':
+        train_set = CrossSegWiki727KDataset(args, 'train')
+        dev_set = CrossSegWiki727KDataset(args, 'dev')
+    elif args.dataset == 'wiki_section':
+        train_set = CrossSegWikiSectionDataset(args, 'train')
+        dev_set = CrossSegWikiSectionDataset(args, 'validation')
+        test_set = CrossSegWikiSectionDataset(args, 'test')
+
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, collate_fn=train_collate_fn, num_workers=args.num_workers)
     dev_loader = DataLoader(dev_set, batch_size=args.eval_batch_size, shuffle=False, collate_fn=train_collate_fn, num_workers=args.num_workers)
     optimizer = AdamW(model.parameters(), lr=args.lr)
@@ -137,9 +145,11 @@ if __name__ == "__main__":
     parser.add_argument('-mode', help='Train or test the model', default='train', type=str, choices=['train', 'test'])
     # parser.add_argument('-preprocess', help='Whether to preprocess the data to the format of the pretained encoder', action='store_true')
     parser.add_argument('-high_granularity', help='Use high granularity for wikipedia dataset segmentation', action='store_true')
-    parser.add_argument('-data_dir', help='Path to directory containing the data files', default=pjoin('data', 'wiki_727'), type=str)
+
+    parser.add_argument('-dataset', help='Name of the dataset', default='wiki_section', type=str, choices=['wiki_727K', 'wiki_section'])
+    parser.add_argument('-data_dir', help='Path to directory containing the data files', default=pjoin('data', 'wiki_section'), type=str)
     parser.add_argument('-context_len', help='Token length of the left and right context (input_len = 2 x context_len + 2)', default=128, type=int)
-    parser.add_argument('-pad_context', help='', action='store_true')
+    parser.add_argument('-pad_context', help='Pad left and right context with [PAD]', action='store_true')
 
     # Effective batch size = batch_size * grad_accum_steps
     parser.add_argument('-batch_size', help='Batch size during training', type=int, default=8)

@@ -1,8 +1,9 @@
 import re
 import os
-import torch
+import json
 import pdb
 import itertools
+import torch
 
 from torch.utils.data import Dataset
 from transformers import AutoTokenizer
@@ -204,7 +205,110 @@ class WikipediaDataSet(Dataset):
         return len(self.textfiles)
 
 
-class CrossSegWikiDataset(Dataset):
+
+class CrossSegWikiSectionDataset(Dataset):
+    """
+    WikiSection dataset formatted for the cross-segment attention model
+    """
+    def __init__(self, args, split_name, domain='city'):
+        assert domain in ['city', 'disease']
+
+        name = f'wikisection_en_{domain}_{split_name}'
+
+
+        json_file = pjoin(args.data_dir, f'{name}.json')
+        cached_processed_file = pjoin(args.data_dir, f'{name}_processed.pth')
+        assert os.path.isfile(json_file)
+
+        self.high_granularity = args.high_granularity
+        self.context_len = args.context_len
+        self.pad_context = args.pad_context
+        self.tokenizer = AutoTokenizer.from_pretrained(args.encoder)
+
+        with open(json_file, 'r') as f:
+            json_data = json.load(f)
+
+        if not os.path.isfile(cached_processed_file):
+            preprocessed = self.preprocess_for_encoder(json_data)
+            torch.save(preprocessed, cached_processed_file)
+        else:
+            preprocessed = torch.load(cached_processed_file)
+
+        self.data, self.index2data = preprocessed['data'], preprocessed['index2data']
+        self.num_boundaries = len(self.index2data.keys())
+    
+    def preprocess_for_encoder(self, data):
+
+        # Number of sentence boundaries
+        num_boundaries = 0
+
+        # Number of valid examples (more than one sentences), also used as file/example index
+        num_examples = 0
+
+        # For storing processed model input
+        processed_data = []
+        index2data = {}
+
+        for idx, example in tqdm(enumerate(data), total=len(data)):
+            text, annotations = example['text'], example['annotations']
+
+            sections = []
+            for sec in annotations:
+                begin = sec['begin']
+                end = begin + sec['length'] 
+                sections.append(text[begin:end].strip().split('\n'))
+
+            seg_idx = list(map(lambda x: x - 1, itertools.accumulate([len(sec) for sec in sections])))[:-1]
+            sents = [sent for sec in sections for sent in sec]
+
+            if len(sents) < 2:
+                continue
+
+            input_ids = self.tokenizer(sents, add_special_tokens=False, return_token_type_ids=False, return_attention_mask=False)['input_ids']
+            sent_boundaries = list(itertools.accumulate([len(sent) for sent in input_ids]))[:-1]
+            input_ids = [token_id for sent in input_ids for token_id in sent]
+            targets = [1 if idx in seg_idx else 0 for idx in range(len(sent_boundaries))]
+
+            for boundary_idx in range(len(sent_boundaries)):
+                dataset_idx = num_boundaries + boundary_idx
+                index2data[dataset_idx] = (num_examples, boundary_idx)
+
+
+            num_boundaries += len(sent_boundaries)
+            num_examples += 1
+
+
+            processed_data.append({'input_ids': input_ids, 'sent_boundaries': sent_boundaries, 'targets': targets})
+
+        return {'data': processed_data, 'index2data': index2data}
+
+
+    def __len__(self):
+        return self.num_boundaries
+
+    def __getitem__(self, index):
+        data_idx, boundary_idx = self.index2data[index]
+
+        data = self.data[data_idx]
+        token_idx = data['sent_boundaries'][boundary_idx]
+
+        left_context = data['input_ids'][max(0, token_idx - self.context_len):token_idx]
+        right_context = data['input_ids'][token_idx:token_idx + self.context_len]
+
+        # Pad to the left or right of context
+        if self.pad_context:
+            left_context = [self.tokenizer.pad_token_id for _ in range(self.context_len - len(left_context))] + left_context
+            right_context = right_context + [self.tokenizer.pad_token_id for _ in range(self.context_len - len(right_context))]
+
+        input_ids = [self.tokenizer.cls_token_id] + left_context + [self.tokenizer.sep_token_id] + right_context
+        token_type_ids = [0 for _ in range(len(left_context) + 2)] + [1 for _ in range(len(right_context))]
+        attention_mask = [0 if x == 0 else 1 for x in input_ids]
+        return (input_ids, token_type_ids, attention_mask, data['targets'][boundary_idx]) 
+
+
+
+
+class CrossSegWiki727KDataset(Dataset):
     """
     Wikipedia topic segmentation dataset formatted for the cross-segment attention model
     """
@@ -218,7 +322,7 @@ class CrossSegWikiDataset(Dataset):
             cache_wiki_filenames(self.data_dir)
             print(f"Created cache file containing paths to all data files at: \"{cache_file_path}\"")
 
-         # Stores the path to all files in the dataset
+        # Stores the path to all files in the dataset
         self.data_files = cached_file_path.read_text().splitlines()
         self.high_granularity = args.high_granularity
         self.context_len = args.context_len
@@ -234,7 +338,7 @@ class CrossSegWikiDataset(Dataset):
         if not os.path.isfile(cached_data_mapping):
             data_mapping = self.preprocess_for_encoder()
             torch.save(data_mapping, cached_data_mapping)
-
+            self.index2data = data_mapping['index2data']
         else:
             data_mapping = torch.load(cached_data_mapping)
             self.index2data = data_mapping['index2data']
@@ -255,7 +359,7 @@ class CrossSegWikiDataset(Dataset):
             save_path = f"{str(path)}_{self.file_suffix}"
             input_ids = self.tokenizer(data, add_special_tokens=False, return_token_type_ids=False, return_attention_mask=False)['input_ids']
 
-            sent_boundaries = list(itertools.accumulate([len(sent) for sent in input_ids]))
+            sent_boundaries = list(itertools.accumulate([len(sent) for sent in input_ids]))[:-1]
             input_ids = [token_id for sent in input_ids for token_id in sent]
             targets = [0 for _ in range(len(sent_boundaries))]
             for idx in seg_idx:
