@@ -57,7 +57,7 @@ def train_collate_fn(batch):
 
 def eval(model, eval_loader):
     model.eval()
-    cuda = next(model.parameters()).is_cuda
+    device = next(model.parameters()).device
 
     with torch.no_grad():
 
@@ -65,7 +65,7 @@ def eval(model, eval_loader):
         total_loss = 0.
         for step, batch in tqdm(enumerate(eval_loader), total=len(eval_loader)):
             if cuda:
-                batch = {k: v.to('cuda') for k, v in batch.items()}
+                batch = {k: v.to(device) for k, v in batch.items()}
 
             
             logits, loss = model(**batch)
@@ -85,7 +85,6 @@ def eval(model, eval_loader):
         f_score = round(tp / (tp + 0.5 * (fp + fn)), 4)
         total_loss = round(total_loss, 4)
 
-
     return precision, recall, f_score, total_loss
 
 
@@ -93,9 +92,7 @@ def eval(model, eval_loader):
 def train(args):
     model = CrossSegmentBert(args)
     model.train()
-
-    if args.cuda:
-        model = model.to('cuda')
+    model = model.to(args.device)
 
     # Initialize datasets
     if args.dataset == 'wiki_727K':
@@ -111,12 +108,13 @@ def train(args):
     optimizer = AdamW(model.parameters(), lr=args.lr)
 
     total_accum_steps = 0
+
     for epoch in range(args.num_epochs):
         with tqdm(desc='Training', total=len(train_loader)) as pbar:
             for step, batch in enumerate(train_loader):
                     
                 if args.cuda:
-                    batch = {k: v.to('cuda') for k, v in batch.items()}
+                    batch = {k: v.to(args.device) for k, v in batch.items()}
 
                 logits, loss = model(**batch)
                 loss.backward()
@@ -126,7 +124,7 @@ def train(args):
                     model.zero_grad()
                     total_accum_steps += 1
 
-                if (total_accum_steps + 1) % args.eval_steps == 0:
+                if (total_accum_steps) % args.eval_steps == 0:
                     pbar.set_description('Evaluating on Dev Set')
                     precision, recall, f_score, total_loss = eval(model, dev_loader)
                     pbar.set_description(f'(Dev: f1: {f_score}, loss={total_loss}')
@@ -141,6 +139,7 @@ def test(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-cuda', help='Use cuda', action='store_true')
+    parser.add_argument('-cuda_idx', help='Cuda device index', default=0, type=int)
     parser.add_argument('-encoder', help='Pretrained encoder for the cross-segment attention model', default='bert-base-uncased', type=str)
     parser.add_argument('-mode', help='Train or test the model', default='train', type=str, choices=['train', 'test'])
     # parser.add_argument('-preprocess', help='Whether to preprocess the data to the format of the pretained encoder', action='store_true')
@@ -155,15 +154,20 @@ if __name__ == "__main__":
     parser.add_argument('-batch_size', help='Batch size during training', type=int, default=8)
     parser.add_argument('-grad_accum_steps', help='Number of steps for gradient accumulation (Effective batch size = batch_size x grad_accum_steps)', type=int, default=192)
     parser.add_argument('-num_workers', help='Number of workers for the dataloaders', type=int, default=0)
-    parser.add_argument('-num_epochs', help='Max number of epochs to train', type=int, default=1)
+    parser.add_argument('-num_epochs', help='Max number of epochs to train', type=int, default=3)
     parser.add_argument('-lr', help='Learning rate', type=float, default=1e-5)
     parser.add_argument('-eval_steps', help='Number of accumulated steps before each dev set evaluation', type=int, default=1000)
     parser.add_argument('-eval_batch_size', help='Batch size during evaluation', type=int, default=16)
 
     parser.add_argument('-hidden_size', help='Hidden size of the output classifier', type=int, default=128)
-    
 
     args = parser.parse_args()
+
+    if args.cuda and torch.cuda.is_available():
+        args.device = torch.device(f'cuda:{args.cuda_idx}')
+    else:
+        args.device = torch.device('cpu')
+
 
     if args.mode == 'train':
         train(args)

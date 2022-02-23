@@ -218,17 +218,18 @@ class CrossSegWikiSectionDataset(Dataset):
 
         json_file = pjoin(args.data_dir, f'{name}.json')
         cached_processed_file = pjoin(args.data_dir, f'{name}_processed.pth')
-        assert os.path.isfile(json_file)
 
         self.high_granularity = args.high_granularity
         self.context_len = args.context_len
         self.pad_context = args.pad_context
         self.tokenizer = AutoTokenizer.from_pretrained(args.encoder)
 
-        with open(json_file, 'r') as f:
-            json_data = json.load(f)
 
         if not os.path.isfile(cached_processed_file):
+            assert os.path.isfile(json_file)
+            with open(json_file, 'r') as f:
+                json_data = json.load(f)
+
             preprocessed = self.preprocess_for_encoder(json_data)
             torch.save(preprocessed, cached_processed_file)
         else:
@@ -260,6 +261,9 @@ class CrossSegWikiSectionDataset(Dataset):
 
             seg_idx = list(map(lambda x: x - 1, itertools.accumulate([len(sec) for sec in sections])))[:-1]
             sents = [sent for sec in sections for sent in sec]
+
+            # sents_from_text = text.strip().split('\n')
+            # assert sents_from_text == sents
 
             if len(sents) < 2:
                 continue
