@@ -90,8 +90,6 @@ def eval(model, eval_loader):
             fn += torch.logical_and(targets == 1, pred == 0).sum().item()
             total_loss += loss.item()
 
-            if step > 100:
-                break
         try:
             precision = round(tp / (tp + fp), 4)
         except:
@@ -101,7 +99,7 @@ def eval(model, eval_loader):
             recall = round(tp / (tp + fn), 4)
         except:
             recall = 0.
-        
+
         f_score = round(tp / (tp + 0.5 * (fp + fn)), 4)
         total_loss = round(total_loss, 4)
 
@@ -205,9 +203,9 @@ if __name__ == "__main__":
     parser.add_argument('-grad_accum_steps', help='Number of steps for gradient accumulation (Effective batch size = batch_size x grad_accum_steps)', type=int, default=192)
     parser.add_argument('-num_workers', help='Number of workers for the dataloaders', type=int, default=0)
     parser.add_argument('-num_epochs', help='Max number of epochs to train', type=int, default=3)
-    parser.add_argument('-lr', help='Learning rate', type=float, default=1e-5)
-    parser.add_argument('-eval_steps', help='Number of accumulated steps before each dev set evaluation', type=int, default=10)
-    parser.add_argument('-report_steps', help='Number of accumulated steps before printing the training loss', type=int, default=5)
+    parser.add_argument('-lr', help='Learning rate', type=float, default=5e-5)
+    parser.add_argument('-eval_steps', help='Number of accumulated steps before each dev set evaluation', type=int, default=50)
+    parser.add_argument('-report_steps', help='Number of accumulated steps before printing the training loss', type=int, default=1)
     parser.add_argument('-eval_batch_size', help='Batch size during evaluation', type=int, default=16)
 
     parser.add_argument('-hidden_size', help='Hidden size of the output classifier', type=int, default=128)
