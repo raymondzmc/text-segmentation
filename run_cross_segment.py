@@ -186,8 +186,7 @@ def test(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('-cuda', help='Use cuda', action='store_true')
-    parser.add_argument('-cuda_idx', help='Cuda device index', default=0, type=int)
+    parser.add_argument('-device', help='GPU index', default=0, type=int)
     parser.add_argument('-encoder', help='Pretrained encoder for the cross-segment attention model', default='bert-base-uncased', type=str)
     parser.add_argument('-mode', help='Train or test the model', default='train', type=str, choices=['train', 'test'])
     # parser.add_argument('-preprocess', help='Whether to preprocess the data to the format of the pretained encoder', action='store_true')
@@ -213,7 +212,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if args.cuda and torch.cuda.is_available():
+    if args.device and torch.cuda.is_available():
         args.device = torch.device(f'cuda:{args.cuda_idx}')
     else:
         args.device = torch.device('cpu')
