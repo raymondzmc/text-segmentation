@@ -1,15 +1,30 @@
 import os
 import pdb
+import logging
 import argparse
+from os.path import join as pjoin
+
 import torch
 import torch.nn as nn
-
 from tqdm import tqdm
-from os.path import join as pjoin
+from datetime import datetime
 from torch.utils.data import DataLoader
 from transformers import AutoModel, AdamW
 
 from wiki_loader import CrossSegWiki727KDataset, CrossSegWikiSectionDataset
+
+
+def init_logger(log_file=None, log_file_level=logging.NOTSET):
+    log_format = logging.Formatter("[%(asctime)s %(levelname)s] %(message)s")
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+
+    if log_file and log_file != '':
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(log_file_level)
+        file_handler.setFormatter(log_format)
+        logger.addHandler(file_handler)
+    return logger
 
 class CrossSegmentBert(nn.Module):
     def __init__(self, args):
@@ -86,6 +101,19 @@ def eval(model, eval_loader):
     return precision, recall, f_score, total_loss
 
 
+class MovingAverage:
+    def __init__(self, window_size):
+        self.window_size = window_size
+        self.values = []
+        self.sum = 0
+
+    def process(self, value):
+        self.values.append(value)
+        self.sum += value
+        if len(self.values) > self.window_size:
+            self.sum -= self.values.pop(0)
+        return float(self.sum) / len(self.values)
+
 
 def train(args):
     model = CrossSegmentBert(args)
@@ -104,10 +132,14 @@ def train(args):
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, collate_fn=train_collate_fn, num_workers=args.num_workers)
     dev_loader = DataLoader(dev_set, batch_size=args.eval_batch_size, shuffle=False, collate_fn=train_collate_fn, num_workers=args.num_workers)
     optimizer = AdamW(model.parameters(), lr=args.lr)
-
     total_accum_steps = 0
 
+    window_size = args.grad_accum_steps * args.report_steps
+    moving_loss = MovingAverage(window_size=100)
+    best_f_score = 0.
     for epoch in range(args.num_epochs):
+        epoch_loss = 0.
+
         with tqdm(desc='Training', total=len(train_loader)) as pbar:
             for step, batch in enumerate(train_loader):
                     
@@ -115,6 +147,8 @@ def train(args):
                     batch = {k: v.to(args.device) for k, v in batch.items()}
 
                 logits, loss = model(**batch)
+                epoch_loss += loss.item()
+                avg_loss = moving_loss.process(loss.item())
                 loss.backward()
 
                 if ((step + 1) % args.grad_accum_steps == 0) or (step + 1 == len(train_loader)):
@@ -122,12 +156,23 @@ def train(args):
                     model.zero_grad()
                     total_accum_steps += 1
 
-                if (total_accum_steps) % args.eval_steps == 0:
-                    pbar.set_description('Evaluating on Dev Set')
-                    precision, recall, f_score, total_loss = eval(model, dev_loader)
-                    pbar.set_description(f'(Dev: f1: {f_score}, loss={total_loss}')
-                    model.train()
+                    if total_accum_steps % args.report_steps == 0:
+                        lr = optimizer.param_groups[0]['lr']
+                        args.logger.info(f'(Step {total_accum_steps}) LR: {lr}, Moving Loss: {avg_loss}')
 
+                    if total_accum_steps % args.eval_steps == 0:
+                        pbar.set_description('Evaluating on Dev Set')
+                        precision, recall, f_score, total_loss = eval(model, dev_loader)
+                        dev_results = f'(Dev: F1: {f_score}, Loss={total_loss}'
+                        pbar.set_description(dev_results)
+                        args.logger.info(dev_results)
+                        model.train()
+
+                        if f_score > best_f_score:
+                            save_name = f'{args.encoder}_{args.dataset}_{total_accum_steps}_{round(f_score * 100)}.pth'
+                            torch.save(model.state_dict(), pjoin(args.results_dir, save_name))
+                            best_f_score = f_score
+                            logger.info(f"Saved Checkpoint at \"{save_name}\"")
                 pbar.update(1)
 
 
@@ -154,10 +199,12 @@ if __name__ == "__main__":
     parser.add_argument('-num_workers', help='Number of workers for the dataloaders', type=int, default=0)
     parser.add_argument('-num_epochs', help='Max number of epochs to train', type=int, default=3)
     parser.add_argument('-lr', help='Learning rate', type=float, default=1e-5)
-    parser.add_argument('-eval_steps', help='Number of accumulated steps before each dev set evaluation', type=int, default=1000)
+    parser.add_argument('-eval_steps', help='Number of accumulated steps before each dev set evaluation', type=int, default=10)
+    parser.add_argument('-report_steps', help='Number of accumulated steps before printing the training loss', type=int, default=5)
     parser.add_argument('-eval_batch_size', help='Batch size during evaluation', type=int, default=16)
 
     parser.add_argument('-hidden_size', help='Hidden size of the output classifier', type=int, default=128)
+    parser.add_argument('-results_dir', help='Directory for storing the results', type=str, default='results')
 
     args = parser.parse_args()
 
@@ -166,6 +213,13 @@ if __name__ == "__main__":
     else:
         args.device = torch.device('cpu')
 
+    if not os.path.exists(args.results_dir):
+        os.makedirs(args.results_dir, exist_ok=True)
+
+    date = datetime.now().strftime("%Y%m%d")
+    log_file = f"{args.encoder}_{args.dataset}_{date}.log"
+    args.logger = init_logger(pjoin(args.results_dir, log_file))
+    args.logger.info(args)
 
     if args.mode == 'train':
         train(args)
