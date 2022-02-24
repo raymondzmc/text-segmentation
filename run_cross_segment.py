@@ -1,5 +1,6 @@
 import os
 import pdb
+import math
 import logging
 import argparse
 from os.path import join as pjoin
@@ -9,7 +10,7 @@ import torch.nn as nn
 from tqdm import tqdm
 from datetime import datetime
 from torch.utils.data import DataLoader
-from transformers import AutoModel, AdamW
+from transformers import AutoModel, AdamW, get_linear_schedule_with_warmup
 
 from wiki_loader import CrossSegWiki727KDataset, CrossSegWikiSectionDataset
 
@@ -101,9 +102,9 @@ def eval(model, eval_loader):
             recall = 0.
 
         f_score = round(tp / (tp + 0.5 * (fp + fn)), 4)
-        total_loss = round(total_loss, 4)
+        avg_loss = round(total_loss / len(eval_loader), 4)
 
-    return precision, recall, f_score, total_loss
+    return precision, recall, f_score, avg_loss
 
 
 class MovingAverage:
@@ -134,14 +135,24 @@ def train(args):
         dev_set = CrossSegWikiSectionDataset(args, 'validation')
         test_set = CrossSegWikiSectionDataset(args, 'test')
 
+    # Data loaders
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, collate_fn=train_collate_fn, num_workers=args.num_workers)
     dev_loader = DataLoader(dev_set, batch_size=args.eval_batch_size, shuffle=False, collate_fn=train_collate_fn, num_workers=args.num_workers)
+
+    # Optimization
     optimizer = AdamW(model.parameters(), lr=args.lr)
+    steps_per_epoch = math.ceil(len(train_loader) / (args.batch_size * args.grad_accum_steps))
+    num_training_steps = steps_per_epoch * args.num_epochs if args.num_training_steps == None else args.num_training_steps
+    num_warmup_steps = num_training_steps // 10 if args.num_training_steps == None else args.num_training_steps
+    lr_scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=num_training_steps)
     total_accum_steps = 0
 
+    # Tracking moving average (loss)
     window_size = args.grad_accum_steps * args.report_steps
     moving_loss = MovingAverage(window_size=100)
     best_f_score = 0.
+
+
     for epoch in range(args.num_epochs):
         epoch_loss = 0.
 
@@ -157,6 +168,7 @@ def train(args):
 
                 if ((step + 1) % args.grad_accum_steps == 0) or (step + 1 == len(train_loader)):
                     optimizer.step()
+                    lr_scheduler.step()
                     model.zero_grad()
                     total_accum_steps += 1
 
@@ -167,7 +179,7 @@ def train(args):
                     if total_accum_steps % args.eval_steps == 0:
                         pbar.set_description('Evaluating on Dev Set')
                         precision, recall, f_score, total_loss = eval(model, dev_loader)
-                        dev_results = f'(Dev: F1: {f_score}, Loss={total_loss}'
+                        dev_results = f'(Dev) F1 Score: {f_score}, Loss: {total_loss}'
                         pbar.set_description(dev_results)
                         args.logger.info(dev_results)
                         model.train()
@@ -176,7 +188,8 @@ def train(args):
                             save_name = f'{args.encoder}_{args.dataset}_{total_accum_steps}_{round(f_score * 100)}.pth'
                             torch.save(model.state_dict(), pjoin(args.results_dir, save_name))
                             best_f_score = f_score
-                            logger.info(f"Saved Checkpoint at \"{save_name}\"")
+                            args.logger.info(f"Saved Checkpoint at \"{save_name}\"")
+
                 pbar.update(1)
 
 
@@ -196,12 +209,15 @@ if __name__ == "__main__":
     parser.add_argument('-context_len', help='Token length of the left and right context (input_len = 2 x context_len + 2)', default=128, type=int)
     parser.add_argument('-pad_context', help='Pad left and right context with [PAD]', action='store_true')
 
-    # Effective batch size = batch_size * grad_accum_steps
+    # Effective batch size = batch_size * grad_accum_steps (e.g. 8 x 8 = 64)
     parser.add_argument('-batch_size', help='Batch size during training', type=int, default=8)
-    parser.add_argument('-grad_accum_steps', help='Number of steps for gradient accumulation (Effective batch size = batch_size x grad_accum_steps)', type=int, default=192)
+    parser.add_argument('-grad_accum_steps', help='Number of steps for gradient accumulation (Effective batch size = batch_size x grad_accum_steps)', type=int, default=8)
+    parser.add_argument('-num_warmup_steps', help='Number of warm-up steps (for lr scheduler)', type=int, default=None)
+    parser.add_argument('-num_training_steps', help='Total number of training steps (for lr scheduler)', type=int, default=None)
+    parser.add_argument('-num_epochs', help='Max number of epochs to train', type=int, default=10)
+    parser.add_argument('-lr', help='Learning rate', type=float, default=1e-5)
+
     parser.add_argument('-num_workers', help='Number of workers for the dataloaders', type=int, default=0)
-    parser.add_argument('-num_epochs', help='Max number of epochs to train', type=int, default=3)
-    parser.add_argument('-lr', help='Learning rate', type=float, default=5e-5)
     parser.add_argument('-eval_steps', help='Number of accumulated steps before each dev set evaluation', type=int, default=50)
     parser.add_argument('-report_steps', help='Number of accumulated steps before printing the training loss', type=int, default=1)
     parser.add_argument('-eval_batch_size', help='Batch size during evaluation', type=int, default=16)
