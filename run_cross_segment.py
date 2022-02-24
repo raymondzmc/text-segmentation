@@ -211,8 +211,8 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if args.device and torch.cuda.is_available():
-        args.device = torch.device(f'cuda:{args.cuda_idx}')
+    if torch.cuda.is_available():
+        args.device = torch.device(f'cuda:{args.device}')
     else:
         args.device = torch.device('cpu')
 
