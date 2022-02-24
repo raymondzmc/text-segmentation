@@ -148,8 +148,7 @@ def train(args):
         with tqdm(desc='Training', total=len(train_loader)) as pbar:
             for step, batch in enumerate(train_loader):
                     
-                if args.cuda:
-                    batch = {k: v.to(args.device) for k, v in batch.items()}
+                batch = {k: v.to(args.device) for k, v in batch.items()}
 
                 logits, loss = model(**batch)
                 epoch_loss += loss.item()
