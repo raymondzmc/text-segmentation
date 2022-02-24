@@ -214,7 +214,7 @@ if __name__ == "__main__":
     parser.add_argument('-grad_accum_steps', help='Number of steps for gradient accumulation (Effective batch size = batch_size x grad_accum_steps)', type=int, default=8)
     parser.add_argument('-num_warmup_steps', help='Number of warm-up steps (for lr scheduler)', type=int, default=None)
     parser.add_argument('-num_training_steps', help='Total number of training steps (for lr scheduler)', type=int, default=None)
-    parser.add_argument('-num_epochs', help='Max number of epochs to train', type=int, default=10)
+    parser.add_argument('-num_epochs', help='Max number of epochs to train', type=int, default=4)
     parser.add_argument('-lr', help='Learning rate', type=float, default=1e-5)
 
     parser.add_argument('-num_workers', help='Number of workers for the dataloaders', type=int, default=0)
