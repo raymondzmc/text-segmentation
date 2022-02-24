@@ -64,10 +64,8 @@ def eval(model, eval_loader):
         tp, fp, fn = 0, 0, 0
         total_loss = 0.
         for step, batch in tqdm(enumerate(eval_loader), total=len(eval_loader)):
-            if cuda:
-                batch = {k: v.to(device) for k, v in batch.items()}
 
-            
+            batch = {k: v.to(device) for k, v in batch.items()}
             logits, loss = model(**batch)
 
             targets = batch['targets']
