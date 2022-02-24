@@ -92,9 +92,16 @@ def eval(model, eval_loader):
 
             if step > 100:
                 break
+        try:
+            precision = round(tp / (tp + fp), 4)
+        except:
+            precision = 0.
 
-        precision = round(tp / (tp + fp), 4)
-        recall = round(tp / (tp + fn), 4)
+        try:
+            recall = round(tp / (tp + fn), 4)
+        except:
+            recall = 0.
+        
         f_score = round(tp / (tp + 0.5 * (fp + fn)), 4)
         total_loss = round(total_loss, 4)
 
