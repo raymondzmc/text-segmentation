@@ -1,0 +1,97 @@
+/* Style for layout */
+.vis-row {
+    flex: 3;
+    display: flex;
+    flex-direction: row;
+    margin: 10px;
+}
+
+
+#title {
+    margin: .5em;
+    font-size: 3em;
+    font-weight: 1000;
+}
+
+/* Style for projections*/
+svg.projection {
+    border: 1px solid black;
+}
+
+.article {
+    opacity: 0.4;
+    stroke: black;
+    stroke-width: 0.2;
+    stroke-opacity: 0;
+}
+
+.article.selected {
+    opacity: 1;
+    stroke-opacity: 1;
+}
+
+/* Style for token visualization*/
+ul.token-container {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+ul.token-container li{
+    display: inline-block;
+    min-width: 20px;
+    padding: 5px;
+    background-color: #eee;
+    margin: 2px;
+    font-family: Source Sans Pro,sans-serif;
+    font-weight: 600;
+    font-size: 1.5em;
+}
+
+ul.token-container li:hover, {
+    background-color: #e6e6e6;
+}
+
+/* Style for other components*/
+#loader {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 9999;
+    display: block;
+    text-align: center;
+    background: 50% 50% no-repeat rgb(249, 249, 249);
+    opacity: .6;
+    padding: 20%
+}
+
+#modal {
+    overflow-y: auto;
+    max-width: 2000px;
+}
+
+text {
+    pointer-events: none;
+}
+
+
+/* Style for heatmap visualization*/
+.grid > rect:hover {
+    opacity: 0.7;
+    cursor: pointer;
+}
+
+.grid > rect.selected {
+    stroke: black;
+    stroke-width: 1;
+    fill
+}
+
+.tick.selected > text {
+    font-size: 20px;
+    font-weight: bold;
+    color: red;
+    text-decoration: underline;
+}

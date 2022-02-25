@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>BERT-SUM Visualization</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-nice-select/1.1.0/js/jquery.nice-select.min.js"></script>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh" crossorigin="anonymous">
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.bundle.min.js" integrity="sha384-6khuMg9gaYr5AxOqhkVIODVIvm9ynTT5J4V1cfthmT+emCG6yVmEZsRHdxlotUnm" crossorigin="anonymous"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.min.js" integrity="sha384-wfSDF2E50Y2D1uUdj0O3uMBJnjuUD4Ih7YwaYd1iqfktj0Uod8GCExl3Og8ifwB6" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-modal/0.9.1/jquery.modal.min.js"></script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/5.12.0/d3.js"></script>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jquery-nice-select/1.1.0/css/nice-select.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jquery-modal/0.9.1/jquery.modal.min.css"/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/dc/1.6.0/dc.css">
+</head>
+<body>
+<div id="loader">Loading...</div>
+
+<div class="row">
+    <h3 id="title">  BERT (Cross-Seg) Encoder Visualization</h3>
+</div>
+
+<div class="vis-row">
+    <div class="vis-container" id="projection_2">
+        <span class="box-title">Instance View</span>
+    </div>
+</div>
+
+<div class="vis-row">
+    <div class="vis-container" id="projection_1">
+        <span class="box-title">Hidden States View</span>
+    </div>
+
+    <div class="vis-container" id="projection_3">
+        <span class="box-title">Head Importance View</span>
+    </div>
+
+<!--     <div class="vis-container" id="projection_4">
+        <span class="box-title">Attention View</span>
+    </div> -->
+</div>
+
+
+
+<div class="modal" id="modal">
+    <h1> Visualization of Encoder </h1>
+    <div class="row">
+        <div class="dropdown feature-type">
+            <button class="btn btn-secondary dropdown-toggle" id="type-button" type="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                Sub-word
+            </button>
+            <div class="dropdown-menu feature-type" aria-labelledby="dropdownMenuButton">
+                <a class="dropdown-item">Sub-word</a>
+                <a class="dropdown-item">Word</a>
+                <a class="dropdown-item">Sentence</a>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        <h6>BERT</h6>
+        <ul id="tokens-left" class="token-container"></ul>
+    </div>
+    <div class="row" id="heatmap">
+    </div>
+
+<!--     <div class="row">
+        <h6>BERT-SUM</h6>
+        <ul id="tokens-right" class="token-container"></ul>
+    </div> -->
+</div>
+
+
+<!-- <script src="https://d3js.org/d3-scale-chromatic.v1.js"></script>
+<script src="https://d3js.org/d3-selection-multi.v1.min.js"></script>
+<script src="js/render.js"></script> -->
+<script src="js/index.js"></script>
+<!-- <script src="resources/document.js"></script> -->
+</body>
+</html>

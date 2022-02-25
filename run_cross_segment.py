@@ -48,11 +48,12 @@ class CrossSegmentBert(nn.Module):
             else:
                 nn.init.constant_(p, 0)
 
-    def forward(self, input_ids, attention_mask, token_type_ids, targets):
+    def forward(self, input_ids, attention_mask, token_type_ids, targets, output_hidden=False, output_attentions=False):
         encoder_output = self.encoder(
             input_ids=input_ids,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
+            output_attentions=output_attentions,
         )
 
         hidden_states = encoder_output[0]
@@ -60,7 +61,18 @@ class CrossSegmentBert(nn.Module):
 
         logits = self.classifier(cls_embeddings).squeeze(1)
         cls_loss = self.criterion(logits, targets)
-        return (logits, cls_loss)
+
+        output = {
+            'logits': logits,
+            'loss': cls_loss,
+        }
+
+        if output_hidden:
+            output['hidden'] = cls_embeddings
+        if output_attentions:
+            output['attentions'] = encoder_output[-1]
+
+        return output
 
 
 def train_collate_fn(batch):
@@ -82,8 +94,9 @@ def eval(model, eval_loader):
         for step, batch in tqdm(enumerate(eval_loader), total=len(eval_loader)):
 
             batch = {k: v.to(device) for k, v in batch.items()}
-            logits, loss = model(**batch)
-
+            output = model(**batch)
+            logits, loss = output['logits'], output['loss']
+ 
             targets = batch['targets']
             pred = logits.round()
             tp += torch.logical_and(targets == 1, pred == 1).sum().item()
@@ -141,8 +154,8 @@ def train(args):
 
     # Optimization
     optimizer = AdamW(model.parameters(), lr=args.lr)
-    steps_per_epoch = math.ceil(len(train_loader) / (args.batch_size * args.grad_accum_steps))
-    num_training_steps = steps_per_epoch * args.num_epochs if args.num_training_steps == None else args.num_training_steps
+    steps_per_epoch = math.ceil(len(train_loader) / args.grad_accum_steps)
+    num_training_steps = (steps_per_epoch * args.num_epochs) if args.num_training_steps == None else args.num_training_steps
     num_warmup_steps = num_training_steps // 10 if args.num_training_steps == None else args.num_training_steps
     lr_scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=num_training_steps)
     total_accum_steps = 0
@@ -161,7 +174,8 @@ def train(args):
                     
                 batch = {k: v.to(args.device) for k, v in batch.items()}
 
-                logits, loss = model(**batch)
+                output = model(**batch)
+                loss = output['loss']
                 epoch_loss += loss.item()
                 avg_loss = moving_loss.process(loss.item())
                 loss.backward()
@@ -207,7 +221,7 @@ if __name__ == "__main__":
     parser.add_argument('-dataset', help='Name of the dataset', default='wiki_section', type=str, choices=['wiki_727K', 'wiki_section'])
     parser.add_argument('-data_dir', help='Path to directory containing the data files', default=pjoin('data', 'wiki_section'), type=str)
     parser.add_argument('-context_len', help='Token length of the left and right context (input_len = 2 x context_len + 2)', default=128, type=int)
-    parser.add_argument('-pad_context', help='Pad left and right context with [PAD]', action='store_true')
+    parser.add_argument('-pad_context', help='Pad left and right context with [PAD]', action='store_true', default=True) # Based on implementation described in paper
 
     # Effective batch size = batch_size * grad_accum_steps (e.g. 8 x 8 = 64)
     parser.add_argument('-batch_size', help='Batch size during training', type=int, default=8)
