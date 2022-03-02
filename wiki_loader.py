@@ -213,11 +213,10 @@ class CrossSegWikiSectionDataset(Dataset):
     def __init__(self, args, split_name, domain='city'):
         assert domain in ['city', 'disease']
 
-        name = f'wikisection_en_{domain}_{split_name}'
+        json_file = pjoin(args.data_dir, f'wikisection_en_{domain}_{split_name}.json')
 
-
-        json_file = pjoin(args.data_dir, f'{name}.json')
-        cached_processed_file = pjoin(args.data_dir, f'{name}_processed.pth')
+        cache_name = f'wikisection_en_{domain}_{split_name}_{args.encoder}_{args.context_len}.pth'
+        cached_processed_file = pjoin(args.data_dir, cache_name)
 
         self.high_granularity = args.high_granularity
         self.context_len = args.context_len

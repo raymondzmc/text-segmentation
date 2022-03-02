@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 from tqdm import tqdm
 from sklearn.manifold import TSNE
-from run_cross_segment import CrossSegmentBert
+from run_cross_segment import CrossSegmentBert, collate_fn
 from wiki_loader import CrossSegWiki727KDataset, CrossSegWikiSectionDataset
 from flask import Flask, send_from_directory, request, Response, redirect, url_for, jsonify
 
@@ -54,14 +54,6 @@ def load_globals(args):
 
 
 ####################################### Helper Functions #######################################
-def collate_fn(batch):
-    results = {}
-    results['input_ids'] = torch.tensor([example[0] for example in batch])
-    results['token_type_ids'] = torch.tensor([example[1] for example in batch])
-    results['attention_mask'] = torch.tensor([example[2] for example in batch])
-    results['targets'] = torch.tensor([example[3] for example in batch]).float()
-    return results
-
 def pairwise_cosine_similarity(a, b, eps=1e-8):
     """
     Compute pairwise cosine similarity between two sets of vectors

@@ -100,7 +100,7 @@ const parseProjectionData = (data) => {
           domain.yMax = d[y_name]
         }
     });
-    console.log(domain.xMin, domain.xMax);
+    // console.log(domain.xMin, domain.xMax);
     return data, domain
 } 
 

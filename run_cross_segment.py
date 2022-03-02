@@ -75,7 +75,7 @@ class CrossSegmentBert(nn.Module):
         return output
 
 
-def train_collate_fn(batch):
+def collate_fn(batch):
     results = {}
     results['input_ids'] = torch.tensor([example[0] for example in batch])
     results['token_type_ids'] = torch.tensor([example[1] for example in batch])
@@ -87,35 +87,36 @@ def eval(model, eval_loader):
     model.eval()
     device = next(model.parameters()).device
 
-    with torch.no_grad():
+    tp, fp, fn = 0, 0, 0
+    total_loss = 0.
+    for step, batch in tqdm(enumerate(eval_loader), total=len(eval_loader)):
 
-        tp, fp, fn = 0, 0, 0
-        total_loss = 0.
-        for step, batch in tqdm(enumerate(eval_loader), total=len(eval_loader)):
+        batch = {k: v.to(device) for k, v in batch.items()}
 
-            batch = {k: v.to(device) for k, v in batch.items()}
+        with torch.no_grad():
             output = model(**batch)
-            logits, loss = output['logits'], output['loss']
- 
-            targets = batch['targets']
-            pred = logits.round()
-            tp += torch.logical_and(targets == 1, pred == 1).sum().item()
-            fp += torch.logical_and(targets == 0, pred == 1).sum().item()
-            fn += torch.logical_and(targets == 1, pred == 0).sum().item()
-            total_loss += loss.item()
 
-        try:
-            precision = round(tp / (tp + fp), 4)
-        except:
-            precision = 0.
+        logits, loss = output['logits'], output['loss']
 
-        try:
-            recall = round(tp / (tp + fn), 4)
-        except:
-            recall = 0.
+        targets = batch['targets']
+        pred = torch.sigmoid(logits).round()
+        tp += torch.logical_and(targets == 1, pred == 1).sum().item()
+        fp += torch.logical_and(targets == 0, pred == 1).sum().item()
+        fn += torch.logical_and(targets == 1, pred == 0).sum().item()
+        total_loss += loss.item()
 
-        f_score = round(tp / (tp + 0.5 * (fp + fn)), 4)
-        avg_loss = round(total_loss / len(eval_loader), 4)
+    try:
+        precision = round(tp / (tp + fp), 4)
+    except:
+        precision = 0.
+
+    try:
+        recall = round(tp / (tp + fn), 4)
+    except:
+        recall = 0.
+
+    f_score = round(tp / (tp + 0.5 * (fp + fn)), 4)
+    avg_loss = round(total_loss / len(eval_loader), 4)
 
     return precision, recall, f_score, avg_loss
 
@@ -149,8 +150,8 @@ def train(args):
         test_set = CrossSegWikiSectionDataset(args, 'test')
 
     # Data loaders
-    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, collate_fn=train_collate_fn, num_workers=args.num_workers)
-    dev_loader = DataLoader(dev_set, batch_size=args.eval_batch_size, shuffle=False, collate_fn=train_collate_fn, num_workers=args.num_workers)
+    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, collate_fn=collate_fn, num_workers=args.num_workers)
+    dev_loader = DataLoader(dev_set, batch_size=args.eval_batch_size, shuffle=False, collate_fn=collate_fn, num_workers=args.num_workers)
 
     # Optimization
     optimizer = AdamW(model.parameters(), lr=args.lr)
@@ -208,7 +209,31 @@ def train(args):
 
 
 def test(args):
-    pass
+    model = CrossSegmentBert(args)
+    model.eval()
+    model = model.to(args.device)
+
+    checkpoints = [f for f in os.listdir(args.results_dir) if f.split('.')[-1] in ['pt', 'pth']]
+
+    # Initialize datasets
+    if args.dataset == 'wiki_727K':
+        test_set = CrossSegWiki727KDataset(args, 'test')
+    elif args.dataset == 'wiki_section':
+        test_set = CrossSegWikiSectionDataset(args, 'test')
+
+    test_loader = DataLoader(test_set, batch_size=args.eval_batch_size, shuffle=False, collate_fn=collate_fn, num_workers=args.num_workers)
+
+    for ckpt in checkpoints:
+        args.logger.info(f"\nResults for Checkpoint Loaded at \"{ckpt}\":")
+
+        ckpt_path = pjoin(args.results_dir, ckpt)
+        model.load_state_dict(torch.load(ckpt_path, map_location=args.device))
+
+        precision, recall, f_score, total_loss = eval(model, test_loader)
+        test_results = f'(Test) F1 Score: {f_score}, Precision: {precision}, Recall: {recall} Loss: {total_loss}'
+        args.logger.info(test_results)
+
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
