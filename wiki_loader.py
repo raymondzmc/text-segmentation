@@ -305,7 +305,7 @@ class CrossSegWikiSectionDataset(Dataset):
 
         input_ids = [self.tokenizer.cls_token_id] + left_context + [self.tokenizer.sep_token_id] + right_context
         token_type_ids = [0 for _ in range(len(left_context) + 2)] + [1 for _ in range(len(right_context))]
-        attention_mask = [0 if x == 0 else 1 for x in input_ids]
+        attention_mask = [0 if x == self.tokenizer.pad_token_id else 1 for x in input_ids]
         return (input_ids, token_type_ids, attention_mask, data['targets'][boundary_idx]) 
 
 

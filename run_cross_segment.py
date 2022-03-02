@@ -40,6 +40,10 @@ class CrossSegmentBert(nn.Module):
         )
         self.criterion = nn.BCEWithLogitsLoss(reduction='mean')
         self.init_classifier()
+        if args.encoder == 'roberta-base':
+            self.use_token_type_ids = False
+        else:
+            self.use_token_type_ids = True
     
     def init_classifier(self):
         for p in self.classifier.parameters():
@@ -52,7 +56,7 @@ class CrossSegmentBert(nn.Module):
         encoder_output = self.encoder(
             input_ids=input_ids,
             attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
+            token_type_ids=token_type_ids if self.use_token_type_ids else None,
             output_attentions=output_attentions,
         )
 
@@ -237,7 +241,7 @@ def test(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('-device', help='GPU index', default=0, type=int)
+    parser.add_argument('-device', help='GPU index', default=0)
     parser.add_argument('-encoder', help='Pretrained encoder for the cross-segment attention model', default='bert-base-uncased', type=str)
     parser.add_argument('-mode', help='Train or test the model', default='train', type=str, choices=['train', 'test'])
     # parser.add_argument('-preprocess', help='Whether to preprocess the data to the format of the pretained encoder', action='store_true')
@@ -267,7 +271,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if torch.cuda.is_available():
-        args.device = torch.device(f'cuda:{args.device}')
+        if type(args.device) == int:
+            args.device = torch.device(f'cuda:{args.device}')
+        else:
+            args.device = torch.device(args.device)
     else:
         args.device = torch.device('cpu')
 
